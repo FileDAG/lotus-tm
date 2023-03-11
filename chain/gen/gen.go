@@ -405,116 +405,116 @@ type MinedTipSet struct {
 	Messages []*types.SignedMessage
 }
 
-func (cg *ChainGen) NextTipSet() (*MinedTipSet, error) {
-	return cg.NextTipSetWithNulls(0)
-}
+//func (cg *ChainGen) NextTipSet() (*MinedTipSet, error) {
+//	return cg.NextTipSetWithNulls(0)
+//}
 
-func (cg *ChainGen) NextTipSetWithNulls(nulls abi.ChainEpoch) (*MinedTipSet, error) {
-	mts, err := cg.NextTipSetFromMiners(cg.CurTipset.TipSet(), cg.Miners, nulls)
-	if err != nil {
-		return nil, err
-	}
-
-	return mts, nil
-}
+//func (cg *ChainGen) NextTipSetWithNulls(nulls abi.ChainEpoch) (*MinedTipSet, error) {
+//	mts, err := cg.NextTipSetFromMiners(cg.CurTipset.TipSet(), cg.Miners, nulls)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	return mts, nil
+//}
 
 func (cg *ChainGen) SetWinningPoStProver(m address.Address, wpp WinningPoStProver) {
 	cg.eppProvs[m] = wpp
 }
 
-func (cg *ChainGen) NextTipSetFromMiners(base *types.TipSet, miners []address.Address, nulls abi.ChainEpoch) (*MinedTipSet, error) {
-	ms, err := cg.GetMessages(cg)
-	if err != nil {
-		return nil, xerrors.Errorf("get random messages: %w", err)
-	}
+//func (cg *ChainGen) NextTipSetFromMiners(base *types.TipSet, miners []address.Address, nulls abi.ChainEpoch) (*MinedTipSet, error) {
+//	ms, err := cg.GetMessages(cg)
+//	if err != nil {
+//		return nil, xerrors.Errorf("get random messages: %w", err)
+//	}
+//
+//	msgs := make([][]*types.SignedMessage, len(miners))
+//	for i := range msgs {
+//		msgs[i] = ms
+//	}
+//
+//	fts, err := cg.NextTipSetFromMinersWithMessagesAndNulls(base, miners, msgs, nulls)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	cg.CurTipset = fts
+//
+//	return &MinedTipSet{
+//		TipSet:   fts,
+//		Messages: ms,
+//	}, nil
+//}
 
-	msgs := make([][]*types.SignedMessage, len(miners))
-	for i := range msgs {
-		msgs[i] = ms
-	}
+//func (cg *ChainGen) NextTipSetFromMinersWithMessagesAndNulls(base *types.TipSet, miners []address.Address, msgs [][]*types.SignedMessage, nulls abi.ChainEpoch) (*store.FullTipSet, error) {
+//	var blks []*types.FullBlock
+//
+//	for round := base.Height() + nulls + 1; len(blks) == 0; round++ {
+//		for mi, m := range miners {
+//			bvals, et, ticket, err := cg.nextBlockProof(context.TODO(), base, m, round)
+//			if err != nil {
+//				return nil, xerrors.Errorf("next block proof: %w", err)
+//			}
+//
+//			if et != nil {
+//				// TODO: maybe think about passing in more real parameters to this?
+//				wpost, err := cg.eppProvs[m].ComputeProof(context.TODO(), nil, nil, round, network.Version0)
+//				if err != nil {
+//					return nil, err
+//				}
+//
+//				fblk, err := cg.makeBlock(base, m, ticket, et, bvals, round, wpost, msgs[mi])
+//				if err != nil {
+//					return nil, xerrors.Errorf("making a block for next tipset failed: %w", err)
+//				}
+//
+//				if err := cg.cs.PersistBlockHeaders(context.TODO(), fblk.Header); err != nil {
+//					return nil, xerrors.Errorf("chainstore AddBlock: %w", err)
+//				}
+//
+//				blks = append(blks, fblk)
+//			}
+//		}
+//	}
+//
+//	fts := store.NewFullTipSet(blks)
+//	if err := cg.cs.PutTipSet(context.TODO(), fts.TipSet()); err != nil {
+//		return nil, err
+//	}
+//
+//	cg.CurTipset = fts
+//
+//	return fts, nil
+//}
 
-	fts, err := cg.NextTipSetFromMinersWithMessagesAndNulls(base, miners, msgs, nulls)
-	if err != nil {
-		return nil, err
-	}
-
-	cg.CurTipset = fts
-
-	return &MinedTipSet{
-		TipSet:   fts,
-		Messages: ms,
-	}, nil
-}
-
-func (cg *ChainGen) NextTipSetFromMinersWithMessagesAndNulls(base *types.TipSet, miners []address.Address, msgs [][]*types.SignedMessage, nulls abi.ChainEpoch) (*store.FullTipSet, error) {
-	var blks []*types.FullBlock
-
-	for round := base.Height() + nulls + 1; len(blks) == 0; round++ {
-		for mi, m := range miners {
-			bvals, et, ticket, err := cg.nextBlockProof(context.TODO(), base, m, round)
-			if err != nil {
-				return nil, xerrors.Errorf("next block proof: %w", err)
-			}
-
-			if et != nil {
-				// TODO: maybe think about passing in more real parameters to this?
-				wpost, err := cg.eppProvs[m].ComputeProof(context.TODO(), nil, nil, round, network.Version0)
-				if err != nil {
-					return nil, err
-				}
-
-				fblk, err := cg.makeBlock(base, m, ticket, et, bvals, round, wpost, msgs[mi])
-				if err != nil {
-					return nil, xerrors.Errorf("making a block for next tipset failed: %w", err)
-				}
-
-				if err := cg.cs.PersistBlockHeaders(context.TODO(), fblk.Header); err != nil {
-					return nil, xerrors.Errorf("chainstore AddBlock: %w", err)
-				}
-
-				blks = append(blks, fblk)
-			}
-		}
-	}
-
-	fts := store.NewFullTipSet(blks)
-	if err := cg.cs.PutTipSet(context.TODO(), fts.TipSet()); err != nil {
-		return nil, err
-	}
-
-	cg.CurTipset = fts
-
-	return fts, nil
-}
-
-func (cg *ChainGen) makeBlock(parents *types.TipSet, m address.Address, vrfticket *types.Ticket,
-	eticket *types.ElectionProof, bvals []types.BeaconEntry, height abi.ChainEpoch,
-	wpost []proof7.PoStProof, msgs []*types.SignedMessage) (*types.FullBlock, error) {
-
-	var ts uint64
-	if cg.Timestamper != nil {
-		ts = cg.Timestamper(parents, height-parents.Height())
-	} else {
-		ts = parents.MinTimestamp() + uint64(height-parents.Height())*build.BlockDelaySecs
-	}
-
-	fblk, err := filcns.NewFilecoinExpectedConsensus(cg.sm, nil, nil, nil).CreateBlock(context.TODO(), cg.w, &api.BlockTemplate{
-		Miner:            m,
-		Parents:          parents.Key(),
-		Ticket:           vrfticket,
-		Eproof:           eticket,
-		BeaconValues:     bvals,
-		Messages:         msgs,
-		Epoch:            height,
-		Timestamp:        ts,
-		WinningPoStProof: wpost,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return fblk, err
-}
+//func (cg *ChainGen) makeBlock(parents *types.TipSet, m address.Address, vrfticket *types.Ticket,
+//	eticket *types.ElectionProof, bvals []types.BeaconEntry, height abi.ChainEpoch,
+//	wpost []proof7.PoStProof, msgs []*types.SignedMessage) (*types.FullBlock, error) {
+//
+//	var ts uint64
+//	if cg.Timestamper != nil {
+//		ts = cg.Timestamper(parents, height-parents.Height())
+//	} else {
+//		ts = parents.MinTimestamp() + uint64(height-parents.Height())*build.BlockDelaySecs
+//	}
+//
+//	fblk, err := filcns.NewFilecoinExpectedConsensus(cg.sm, nil, nil, nil).CreateBlock(context.TODO(), cg.w, &api.BlockTemplate{
+//		Miner:            m,
+//		Parents:          parents.Key(),
+//		Ticket:           vrfticket,
+//		Eproof:           eticket,
+//		BeaconValues:     bvals,
+//		Messages:         msgs,
+//		Epoch:            height,
+//		Timestamp:        ts,
+//		WinningPoStProof: wpost,
+//	})
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	return fblk, err
+//}
 
 // ResyncBankerNonce is used for dealing with messages made when
 // simulating forks

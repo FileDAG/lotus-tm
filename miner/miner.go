@@ -144,6 +144,17 @@ func (m *Miner) Start(_ context.Context) error {
 		return fmt.Errorf("miner already started")
 	}
 	m.stop = make(chan struct{})
+	//go m.mine(context.TODO())
+	return nil
+}
+
+func (m *Miner) StartForInit(_ context.Context) error {
+	m.lk.Lock()
+	defer m.lk.Unlock()
+	if m.stop != nil {
+		return fmt.Errorf("miner already started")
+	}
+	m.stop = make(chan struct{})
 	go m.mine(context.TODO())
 	return nil
 }
