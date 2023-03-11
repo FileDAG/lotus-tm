@@ -7,6 +7,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/filecoin-project/lotus/chain/gen/slashfilter"
+	storageminer "github.com/filecoin-project/lotus/miner"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -42,13 +44,11 @@ import (
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/miner"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/power"
-	"github.com/filecoin-project/lotus/chain/gen/slashfilter"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/filecoin-project/lotus/genesis"
 	"github.com/filecoin-project/lotus/journal"
 	"github.com/filecoin-project/lotus/journal/fsjournal"
-	storageminer "github.com/filecoin-project/lotus/miner"
 	"github.com/filecoin-project/lotus/node/modules"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/repo"
@@ -497,7 +497,7 @@ func storageMinerInit(ctx context.Context, cctx *cli.Context, api v1api.FullNode
 
 			m := storageminer.NewMiner(api, epp, a, slashfilter.New(mds), j)
 			{
-				if err := m.Start(ctx); err != nil {
+				if err := m.StartForInit(ctx); err != nil {
 					return xerrors.Errorf("failed to start up genesis miner: %w", err)
 				}
 
