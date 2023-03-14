@@ -184,6 +184,10 @@ var DaemonCmd = &cli.Command{
 			Usage: "run tendermint",
 			Value: false,
 		},
+		&cli.PathFlag{
+			Name:  "tm-config",
+			Usage: "path to tendermint config file",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		isLite := cctx.Bool("lite")
@@ -402,32 +406,34 @@ var DaemonCmd = &cli.Command{
 		// Start an application and a tendermint core in the same process
 		// https://docs.tendermint.com/v0.34/tutorials/go-built-in.html#_1-4-starting-an-application-and-a-tendermint-core-instance-in-the-same-process
 		if cctx.Bool("tm") {
-			db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "failed to open badger db: %v", err)
-				os.Exit(1)
-			}
-			defer db.Close()
-			app := tendermint.NewKVStoreApplication(db)
+			go func() {
+				db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "failed to open badger db: %v", err)
+					os.Exit(1)
+				}
+				defer db.Close()
+				app := tendermint.NewKVStoreApplication(db)
 
-			flag.Parse()
+				flag.Parse()
 
-			tmNode, err := newTendermint(app, configFile)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v", err)
-				os.Exit(2)
-			}
+				tmNode, err := newTendermint(app, cctx.Path("tm-config"))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "%v", err)
+					os.Exit(2)
+				}
 
-			tmNode.Start()
-			defer func() {
-				tmNode.Stop()
-				tmNode.Wait()
+				tmNode.Start()
+				defer func() {
+					tmNode.Stop()
+					tmNode.Wait()
+				}()
+
+				c := make(chan os.Signal, 1)
+				signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+				<-c
+				//os.Exit(0)
 			}()
-
-			c := make(chan os.Signal, 1)
-			signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-			<-c
-			//os.Exit(0)
 		}
 
 		// Serve the RPC.
