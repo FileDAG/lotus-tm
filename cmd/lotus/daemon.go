@@ -8,13 +8,18 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"github.com/filecoin-project/lotus/chain/consensus/tendermint"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"runtime/pprof"
 	"strings"
+	"syscall"
 
 	metricsprom "github.com/ipfs/go-metrics-prometheus"
 	"github.com/mitchellh/go-homedir"
@@ -49,6 +54,17 @@ import (
 	"github.com/filecoin-project/lotus/node/modules/testing"
 	"github.com/filecoin-project/lotus/node/repo"
 	"github.com/filecoin-project/lotus/storage/sealer/ffiwrapper"
+
+	"github.com/dgraph-io/badger"
+	"github.com/spf13/viper"
+	abci "github.com/tendermint/tendermint/abci/types"
+	cfg "github.com/tendermint/tendermint/config"
+	tmflags "github.com/tendermint/tendermint/libs/cli/flags"
+	tmlog "github.com/tendermint/tendermint/libs/log"
+	nm "github.com/tendermint/tendermint/node"
+	"github.com/tendermint/tendermint/p2p"
+	"github.com/tendermint/tendermint/privval"
+	"github.com/tendermint/tendermint/proxy"
 )
 
 const (
@@ -74,6 +90,13 @@ var daemonStopCmd = &cli.Command{
 
 		return nil
 	},
+}
+
+var configFile string
+
+func init() {
+	home, _ := homedir.Dir()
+	flag.StringVar(&configFile, "config", home+"/.tendermint/config/config.toml", "Path to config.toml")
 }
 
 // DaemonCmd is the `go-lotus daemon` command
@@ -155,6 +178,11 @@ var DaemonCmd = &cli.Command{
 		&cli.PathFlag{
 			Name:  "restore-config",
 			Usage: "config file to use when restoring from backup",
+		},
+		&cli.BoolFlag{
+			Name:  "tm",
+			Usage: "run tendermint",
+			Value: false,
 		},
 	},
 	Action: func(cctx *cli.Context) error {
@@ -371,6 +399,37 @@ var DaemonCmd = &cli.Command{
 			return fmt.Errorf("failed to instantiate rpc handler: %s", err)
 		}
 
+		// Start an application and a tendermint core in the same process
+		// https://docs.tendermint.com/v0.34/tutorials/go-built-in.html#_1-4-starting-an-application-and-a-tendermint-core-instance-in-the-same-process
+		if cctx.Bool("tm") {
+			db, err := badger.Open(badger.DefaultOptions("/tmp/badger"))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to open badger db: %v", err)
+				os.Exit(1)
+			}
+			defer db.Close()
+			app := tendermint.NewKVStoreApplication(db)
+
+			flag.Parse()
+
+			tmNode, err := newTendermint(app, configFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%v", err)
+				os.Exit(2)
+			}
+
+			tmNode.Start()
+			defer func() {
+				tmNode.Stop()
+				tmNode.Wait()
+			}()
+
+			c := make(chan os.Signal, 1)
+			signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+			<-c
+			//os.Exit(0)
+		}
+
 		// Serve the RPC.
 		rpcStopper, err := node.ServeRPC(h, "lotus-daemon", endpoint)
 		if err != nil {
@@ -390,6 +449,58 @@ var DaemonCmd = &cli.Command{
 	Subcommands: []*cli.Command{
 		daemonStopCmd,
 	},
+}
+
+func newTendermint(app abci.Application, configFile string) (*nm.Node, error) {
+	// read config
+	config := cfg.DefaultConfig()
+	config.RootDir = filepath.Dir(filepath.Dir(configFile))
+	viper.SetConfigFile(configFile)
+	if err := viper.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("viper failed to read config file: %w", err)
+	}
+	if err := viper.Unmarshal(config); err != nil {
+		return nil, fmt.Errorf("viper failed to unmarshal config: %w", err)
+	}
+	if err := config.ValidateBasic(); err != nil {
+		return nil, fmt.Errorf("config is invalid: %w", err)
+	}
+
+	// create logger
+	logger := tmlog.NewTMLogger(tmlog.NewSyncWriter(os.Stdout))
+	var err error
+	logger, err = tmflags.ParseLogLevel(config.LogLevel, logger, cfg.DefaultLogLevel())
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse log level: %w", err)
+	}
+
+	// read private validator
+	pv := privval.LoadFilePV(
+		config.PrivValidatorKeyFile(),
+		config.PrivValidatorStateFile(),
+	)
+
+	// read node key
+	nodeKey, err := p2p.LoadNodeKey(config.NodeKeyFile())
+	if err != nil {
+		return nil, fmt.Errorf("failed to load node's key: %w", err)
+	}
+
+	// create node
+	node, err := nm.NewNode(
+		config,
+		pv,
+		nodeKey,
+		proxy.NewLocalClientCreator(app),
+		nm.DefaultGenesisDocProviderFunc(config),
+		nm.DefaultDBProvider,
+		nm.DefaultMetricsProvider(config.Instrumentation),
+		logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new Tendermint node: %w", err)
+	}
+
+	return node, nil
 }
 
 func importKey(ctx context.Context, api api.FullNode, f string) error {
