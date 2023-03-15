@@ -92,13 +92,6 @@ var daemonStopCmd = &cli.Command{
 	},
 }
 
-var configFile string
-
-func init() {
-	home, _ := homedir.Dir()
-	flag.StringVar(&configFile, "config", home+"/.tendermint/config/config.toml", "Path to config.toml")
-}
-
 // DaemonCmd is the `go-lotus daemon` command
 var DaemonCmd = &cli.Command{
 	Name:  "daemon",
