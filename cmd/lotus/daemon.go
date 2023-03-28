@@ -232,7 +232,7 @@ var DaemonCmd = &cli.Command{
 		); err != nil {
 			log.Fatalf("Cannot register the view: %v", err)
 		}
-		// Set the metric to one so it is published to the exporter
+		// Set the metric to one, so it is published to the exporter
 		stats.Record(ctx, metrics.LotusInfo.M(1))
 
 		{

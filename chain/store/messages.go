@@ -2,11 +2,11 @@ package store
 
 import (
 	"context"
+	ipld "github.com/ipfs/go-ipld-format"
 
 	block "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
-	ipld "github.com/ipfs/go-ipld-format"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
@@ -52,23 +52,23 @@ func (cs *ChainStore) GetCMessage(ctx context.Context, c cid.Cid) (types.ChainMs
 	return cs.GetSignedMessage(ctx, c)
 }
 
-func (cs *ChainStore) GetMessage(ctx context.Context, c cid.Cid) (*types.Message, error) {
-	var msg *types.Message
-	err := cs.chainLocalBlockstore.View(ctx, c, func(b []byte) (err error) {
-		msg, err = types.DecodeMessage(b)
-		return err
-	})
-	return msg, err
-}
+//func (cs *ChainStore) GetMessage(ctx context.Context, c cid.Cid) (*types.Message, error) {
+//	var msg *types.Message
+//	err := cs.chainLocalBlockstore.View(ctx, c, func(b []byte) (err error) {
+//		msg, err = types.DecodeMessage(b)
+//		return err
+//	})
+//	return msg, err
+//}
 
-func (cs *ChainStore) GetSignedMessage(ctx context.Context, c cid.Cid) (*types.SignedMessage, error) {
-	var msg *types.SignedMessage
-	err := cs.chainLocalBlockstore.View(ctx, c, func(b []byte) (err error) {
-		msg, err = types.DecodeSignedMessage(b)
-		return err
-	})
-	return msg, err
-}
+//func (cs *ChainStore) GetSignedMessage(ctx context.Context, c cid.Cid) (*types.SignedMessage, error) {
+//	var msg *types.SignedMessage
+//	err := cs.chainLocalBlockstore.View(ctx, c, func(b []byte) (err error) {
+//		msg, err = types.DecodeSignedMessage(b)
+//		return err
+//	})
+//	return msg, err
+//}
 
 func (cs *ChainStore) readAMTCids(root cid.Cid) ([]cid.Cid, error) {
 	ctx := context.TODO()

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	nm "github.com/tendermint/tendermint/node"
 	"io"
 	"io/ioutil"
 	"os"
@@ -451,6 +452,10 @@ func (fsr *fsLockedRepo) Close() error {
 	err = fsr.closer.Close()
 	fsr.closer = nil
 	return err
+}
+
+func (fsr *fsLockedRepo) TmNode() (nm.Node, error) {
+
 }
 
 // Blockstore returns a blockstore for the provided data domain.
