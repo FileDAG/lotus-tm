@@ -121,6 +121,17 @@ We need to download and install the official compiler for the Rust programming l
 rustup-init
 ```
 
+#### Tendermint
+
+We need to install Tendermint Core.
+
+```shell
+git clone https://github.com/tendermint/tendermint.git
+cd tendermint
+git checkout v0.34.0
+make install
+```
+
 Follow the prompts to install Rust. The default installation option should be chosen unless you are familiar with customisation.
 
 #### Environment vairables
@@ -222,7 +233,11 @@ Local-nets use slightly different binaries to those used in the Filecoin mainnet
 
 Now that you've got everything setup, you can start the `lotus` and `lotus-miner` nodes.
 
-1. Start the first node:
+1. Init Tendermint:
+    ```shell
+    TMHOME=$HOME/lotus tendermint init
+    ```
+2. Start the first node:
 
     ```shell
     ./lotus daemon --lotus-make-genesis=devgen.car --genesis-template=localnet.json --bootstrap=false
@@ -230,7 +245,7 @@ Now that you've got everything setup, you can start the `lotus` and `lotus-miner
 
     This command will output a lot of information and continue to run. All further steps should be completed in a new terminal window.
 
-2. Import the genesis miner key:
+3. Import the genesis miner key:
 
     ```shell
     ./lotus wallet import --as-default ~/.genesis-sectors/pre-seal-t01000.key
@@ -242,7 +257,7 @@ Now that you've got everything setup, you can start the `lotus` and `lotus-miner
     imported key t3xe5je75lkrvye32tfl37gug3az42iotuu3wxgkrhbpbvmum4lu26begiw74ju5a35nveqaw4ywdibj4y6kxq successfully!
     ```
 
-3. Set up the genesis miner. This process can take a few minutes:
+4. Set up the genesis miner. This process can take a few minutes:
 
     ```shell
     ./lotus-miner init --genesis-miner --actor=t01000 --sector-size=8MiB --pre-sealed-sectors=~/.genesis-sectors --pre-sealed-metadata=~/.genesis-sectors/pre-seal-t01000.json --nosync
@@ -254,7 +269,7 @@ Now that you've got everything setup, you can start the `lotus` and `lotus-miner
     Miner successfully created, you can now start it with 'lotus-miner run'
     ```
 
-4. Start the miner:
+5. Start the miner:
 
     ```shell
     ./lotus-miner run --nosync
