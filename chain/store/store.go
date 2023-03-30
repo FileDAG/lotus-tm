@@ -4,20 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/filecoin-project/lotus/journal"
+	"github.com/filecoin-project/lotus/metrics"
+	lru "github.com/hashicorp/golang-lru"
+	nm "github.com/tendermint/tendermint/node"
+	"go.opencensus.io/stats"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	lru "github.com/hashicorp/golang-lru"
 	block "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	dstore "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	logging "github.com/ipfs/go-log/v2"
-	"go.opencensus.io/stats"
 	"go.opencensus.io/trace"
 	"go.uber.org/multierr"
 	"golang.org/x/sync/errgroup"
@@ -25,15 +28,12 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/pubsub"
-
 	"github.com/filecoin-project/lotus/api"
 	bstore "github.com/filecoin-project/lotus/blockstore"
 	"github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain/actors/adt"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/journal"
-	"github.com/filecoin-project/lotus/metrics"
+	"github.com/filecoin-project/pubsub"
 )
 
 var log = logging.Logger("chainstore")
@@ -96,6 +96,9 @@ type WeightFunc func(ctx context.Context, stateBs bstore.Blockstore, ts *types.T
 //  1. a tipset cache
 //  2. a block => messages references cache.
 type ChainStore struct {
+	tmNode nm.Node
+
+	// In lotus-tm, these "store"s are only used as IPFS client (put data into them, they give CIDs in return).
 	chainBlockstore bstore.Blockstore
 	stateBlockstore bstore.Blockstore
 	metadataDs      dstore.Batching
@@ -129,7 +132,7 @@ type ChainStore struct {
 	wg       sync.WaitGroup
 }
 
-func NewChainStore(chainBs bstore.Blockstore, stateBs bstore.Blockstore, ds dstore.Batching, weight WeightFunc, j journal.Journal) *ChainStore {
+func NewChainStore(tmnd nm.Node, chainBs bstore.Blockstore, stateBs bstore.Blockstore, ds dstore.Batching, weight WeightFunc, j journal.Journal) *ChainStore {
 	c, _ := lru.NewARC(DefaultMsgMetaCacheSize)
 	tsc, _ := lru.NewARC(DefaultTipSetCacheSize)
 	if j == nil {
@@ -141,6 +144,7 @@ func NewChainStore(chainBs bstore.Blockstore, stateBs bstore.Blockstore, ds dsto
 	// some methods _need_ to operate on a local blockstore only.
 	localbs, _ := bstore.UnwrapFallbackStore(chainBs)
 	cs := &ChainStore{
+		tmNode:               tmnd,
 		chainBlockstore:      chainBs,
 		stateBlockstore:      stateBs,
 		chainLocalBlockstore: localbs,
@@ -204,39 +208,39 @@ func (cs *ChainStore) Close() error {
 	return nil
 }
 
-func (cs *ChainStore) Load(ctx context.Context) error {
-	if err := cs.loadHead(ctx); err != nil {
-		return err
-	}
-	if err := cs.loadCheckpoint(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-func (cs *ChainStore) loadHead(ctx context.Context) error {
-	head, err := cs.metadataDs.Get(ctx, chainHeadKey)
-	if err == dstore.ErrNotFound {
-		log.Warn("no previous chain state found")
-		return nil
-	}
-	if err != nil {
-		return xerrors.Errorf("failed to load chain state from datastore: %w", err)
-	}
-
-	var tscids []cid.Cid
-	if err := json.Unmarshal(head, &tscids); err != nil {
-		return xerrors.Errorf("failed to unmarshal stored chain head: %w", err)
-	}
-
-	ts, err := cs.LoadTipSet(ctx, types.NewTipSetKey(tscids...))
-	if err != nil {
-		return xerrors.Errorf("loading tipset: %w", err)
-	}
-
-	cs.heaviest = ts
-
-	return nil
-}
+//func (cs *ChainStore) Load(ctx context.Context) error {
+//	if err := cs.loadHead(ctx); err != nil {
+//		return err
+//	}
+//	if err := cs.loadCheckpoint(ctx); err != nil {
+//		return err
+//	}
+//	return nil
+//}
+//func (cs *ChainStore) loadHead(ctx context.Context) error {
+//	head, err := cs.metadataDs.Get(ctx, chainHeadKey)
+//	if err == dstore.ErrNotFound {
+//		log.Warn("no previous chain state found")
+//		return nil
+//	}
+//	if err != nil {
+//		return xerrors.Errorf("failed to load chain state from datastore: %w", err)
+//	}
+//
+//	var tscids []cid.Cid
+//	if err := json.Unmarshal(head, &tscids); err != nil {
+//		return xerrors.Errorf("failed to unmarshal stored chain head: %w", err)
+//	}
+//
+//	ts, err := cs.LoadTipSet(ctx, types.NewTipSetKey(tscids...))
+//	if err != nil {
+//		return xerrors.Errorf("loading tipset: %w", err)
+//	}
+//
+//	cs.heaviest = ts
+//
+//	return nil
+//}
 
 func (cs *ChainStore) loadCheckpoint(ctx context.Context) error {
 	tskBytes, err := cs.metadataDs.Get(ctx, checkpointKey)
@@ -1132,38 +1136,38 @@ func (cs *ChainStore) TryFillTipSet(ctx context.Context, ts *types.TipSet) (*Ful
 // height. In the case that the given height is a null round, the 'prev' flag
 // selects the tipset before the null round if true, and the tipset following
 // the null round if false.
-func (cs *ChainStore) GetTipsetByHeight(ctx context.Context, h abi.ChainEpoch, ts *types.TipSet, prev bool) (*types.TipSet, error) {
-	if ts == nil {
-		ts = cs.GetHeaviestTipSet()
-	}
-
-	if h > ts.Height() {
-		return nil, xerrors.Errorf("looking for tipset with height greater than start point")
-	}
-
-	if h == ts.Height() {
-		return ts, nil
-	}
-
-	lbts, err := cs.cindex.GetTipsetByHeight(ctx, ts, h)
-	if err != nil {
-		return nil, err
-	}
-
-	if lbts.Height() < h {
-		log.Warnf("chain index returned the wrong tipset at height %d, using slow retrieval", h)
-		lbts, err = cs.cindex.GetTipsetByHeightWithoutCache(ctx, ts, h)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if lbts.Height() == h || !prev {
-		return lbts, nil
-	}
-
-	return cs.LoadTipSet(ctx, lbts.Parents())
-}
+//func (cs *ChainStore) GetTipsetByHeight(ctx context.Context, h abi.ChainEpoch, ts *types.TipSet, prev bool) (*types.TipSet, error) {
+//	if ts == nil {
+//		ts = cs.GetHeaviestTipSet()
+//	}
+//
+//	if h > ts.Height() {
+//		return nil, xerrors.Errorf("looking for tipset with height greater than start point")
+//	}
+//
+//	if h == ts.Height() {
+//		return ts, nil
+//	}
+//
+//	lbts, err := cs.cindex.GetTipsetByHeight(ctx, ts, h)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	if lbts.Height() < h {
+//		log.Warnf("chain index returned the wrong tipset at height %d, using slow retrieval", h)
+//		lbts, err = cs.cindex.GetTipsetByHeightWithoutCache(ctx, ts, h)
+//		if err != nil {
+//			return nil, err
+//		}
+//	}
+//
+//	if lbts.Height() == h || !prev {
+//		return lbts, nil
+//	}
+//
+//	return cs.LoadTipSet(ctx, lbts.Parents())
+//}
 
 func (cs *ChainStore) Weight(ctx context.Context, hts *types.TipSet) (types.BigInt, error) { // todo remove
 	return cs.weight(ctx, cs.StateBlockstore(), hts)
